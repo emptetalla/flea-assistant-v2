@@ -1,5 +1,6 @@
 const express=require('express');const multer=require('multer');const crypto=require('node:crypto');const path=require('node:path');
 const {fmId}=require('./db');const {importMercari}=require('./importer');
+const {importExcel}=require('./excelImporter');
 function createApp(db){
  const app=express();const csrf=crypto.randomBytes(32).toString('hex');
  app.disable('x-powered-by');app.set('view engine','ejs');app.set('views',path.join(__dirname,'../views'));
@@ -57,6 +58,19 @@ function createApp(db){
  app.post('/imports/mercari',upload.single('csv'),guard,(req,res,next)=>{
   if(!req.file)return res.status(400).send('CSVファイルを選択してください');
   try{const id=importMercari(db,req.file.buffer,path.basename(req.file.originalname));res.redirect(303,'/imports/'+id);}catch(error){next(error);}
+ });
+ const excelUpload=multer({storage:multer.memoryStorage(),limits:{fileSize:20*1024*1024,files:2,fields:10}});
+ app.post('/imports/excel/:site',excelUpload.fields([{name:'listings',maxCount:1},{name:'mapping',maxCount:1}]),guard,async(req,res,next)=>{
+  const site=req.params.site;if(!['yahoo','rakuma'].includes(site))return res.status(400).send('未対応サイトです');
+  const file=req.files?.listings?.[0],mapping=req.files?.mapping?.[0];
+  if(!file)return res.status(400).send('出品一覧Excelを選択してください');
+  try{
+   const id=await importExcel(db,site,file.buffer,path.basename(file.originalname),{
+    mappingBuffer:mapping?.buffer,mappingFilename:mapping?path.basename(mapping.originalname):null,
+    sheetName:req.body.sheetName||undefined,mappingSheet:req.body.mappingSheet||undefined,
+    joinByTitlePrice:req.body.joinByTitlePrice==='yes',legacyZeroAsOnly:req.body.legacyZeroAsOnly==='yes'
+   });res.redirect(303,'/imports/'+id);
+  }catch(error){next(error);}
  });
  app.get('/imports/:id',(req,res)=>{
   const batch=db.prepare('SELECT * FROM import_batches WHERE id=?').get(req.params.id);if(!batch)return res.status(404).send('履歴がありません');

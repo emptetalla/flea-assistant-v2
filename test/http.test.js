@@ -21,3 +21,18 @@ test('HTTP登録・編集・検索・詳細・CSV送信・再取込・要確認�
  assert.equal((await fetch(base+'/products',{method:'POST',body:new URLSearchParams({master_title:'不正'})})).status,403);
  assert.equal((await fetch(base+'/products/999')).status,404);
 });
+
+test('Yahoo/Rakuma Excel HTTP取込・結果表示・CSRF',async t=>{
+ const ExcelJS=require('exceljs');
+ const file=async rows=>{const w=new ExcelJS.Workbook();const s=w.addWorksheet('data');rows.forEach(r=>s.addRow(r));return Buffer.from(await w.xlsx.writeBuffer());};
+ const db=openDb(':memory:');const server=createApp(db).listen(0,'127.0.0.1');await new Promise(resolve=>server.once('listening',resolve));
+ t.after(async()=>{await new Promise(resolve=>server.close(resolve));db.close();});
+ const base='http://127.0.0.1:'+server.address().port;
+ const html=await(await fetch(base+'/imports')).text();const token=html.match(/name="_csrf" value="([^"]+)"/)[1];assert.match(html,/Yahoo \/ Rakuma/);
+ const upload=async(site,listing,mapping,csrf=token)=>{const body=new FormData();body.append('_csrf',csrf);body.append('listings',new Blob([listing]),'list.xlsx');if(mapping)body.append('mapping',new Blob([mapping]),'mapping.xlsx');return fetch(base+'/imports/excel/'+site,{method:'POST',body,redirect:'manual'});};
+ const yahoo=await file([['商品ID','商品名'],['z1','新規商品'],['z2','除外商品']]);const map=await file([['商品ID','decision'],['z1','yahoo_only'],['z2','exclude']]);
+ const response=await upload('yahoo',yahoo,map);assert.equal(response.status,303);const result=await(await fetch(base+response.headers.get('location'))).text();assert.match(result,/Yahoo-only/);assert.match(result,/対象外/);assert.match(result,/取込根拠/);
+ const rakuma=await file([['商品名','URL'],['新規商品','https://item.fril.jp/'+'a'.repeat(32)]]);assert.equal((await upload('rakuma',rakuma)).status,303);
+ assert.equal(db.prepare('SELECT count(*) n FROM products').get().n,1);assert.equal(db.prepare('SELECT count(*) n FROM listings').get().n,2);
+ assert.equal((await upload('rakuma',rakuma,null,'bad')).status,403);
+});

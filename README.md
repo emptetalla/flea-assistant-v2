@@ -96,7 +96,7 @@ HTTP・DB・CSVの自動テストはin-memory DBのみ。
 
 ## 後続フェーズ
 
-Yahoo/Rakumaインポート、写真、リネーム、再出品UI、売上、AI、季節性、ニュースは未実装。
+写真、リネーム、再出品UI、売上、AI、季節性、ニュースは未実装。Yahoo/Rakumaインポートは下記の追加仕様に対応。
 写真ルート候補は `C:\Users\en-86\Pictures\flea-products`、今回フォルダへの操作なし。
 旧FM-ID対応はテーブル土台のみ、CSVから推定しない。初期Yahoo対応表は別途確認が必要。
 稼働中DBの単純コピーは避け、整合性のあるSQLiteバックアップを次フェーズで追加。
@@ -106,3 +106,52 @@ Yahoo/Rakumaインポート、写真、リネーム、再出品UI、売上、AI�
 指定の `mercari_listing_20260916_142027.csv` を読み取り、in-memory DBで検証。548行から548商品・548出品を作成、要確認0・エラー0。同じCSVの2回目は新規0、変更なし548、外部キー違反0。原本の書換え、本番V2 DBへの投入はしていません。
 実CSVには説明文・ハッシュタグ列なし。購入日時に基づく状態推定を使用。
 ブラウザで本番V2の商品一覧表示を確認。テスト用サーバーの詳細画面へのブラウザ接続は失敗したため、コピーは自動テスト（Clipboard APIモック）で確認。実ブラウザでの詳細画面コピー操作は未確認。
+
+
+## Yahoo / Rakuma 初期インポート（本番投入前）
+
+### 入力・ID抽出
+
+`src/excelListings.js` が通常表形式とWebコピー縦形式を読み取ります。ExcelJSでセルの実際のhyperlinkを読むため、商品名の表示文字にURLがなくても対応します。
+`src/siteItemIds.js` にYahooとRakumaのURL抽出を分離。Yahooは `paypayfleamarket.yahoo.co.jp/item/z数字`、Rakumaは `item.fril.jp/32桁16進ID`。他ドメイン・ページ送り・ヘルプのリンクは商品扱いしません。
+ID列の有効値を優先し、空欄ならハイパーリンク、リテラルHYPERLINK式、直接URLを確認。複数IDや不正なID列は自動修復せず要確認。
+.xlsxのみ。複数シートはフォームで対象シート名を指定。Webコピーの公開時刻からactiveを推定しません。SOLD OUT等の明示状態だけ反映します。
+
+### Yahoo対応表
+
+標準列: `yahoo_site_item_id`, `decision`, `mercari_site_item_id`。
+matchedはMercari IDから既存productへ追加、yahoo_onlyだけ新規product作成、holdは要確認、excludeは対象外。
+対応表なし・未記載・参照先欠落・既存関連との矛盾は保留。タイトル類似でMercariに紐付けません。
+
+旧対応表向けの2つのオプション（デフォルトOFF）:
+- Yahoo IDもURLもない場合に、Yahoo一覧側と対応表側の商品名完全一致＋価格一致が両方で一意のときのみ対応表を結ぶ。
+- メルカリID=0かつOnly=0を、確認済みYahoo-onlyとして扱う。
+この2点は今回の実データについて利用者が承認済み。別の対応表で自動的に同じ意味とみなさないでください。
+不正なIDが入力された行をタイトルで救済しません。行順をキーにしません。
+
+### Rakuma
+
+既知のsite+site_item_idを優先。新しいIDはmaster_title（前後空白除去後、内部表記は変換せず）の完全一致が1商品なら追加。0件・複数なら保留。listing数ではなくproduct数で判定します。
+
+### データ保護と監査
+
+既存productsをUPDATEせず、Mercari listingも変更しません。新規productはYahoo-onlyだけ。
+更新は同じsite+site_item_idのサイト情報のみ。再取込によるproduct/listing増殖なし。既存の関連付けを黙って変更しません。
+import_rows.raw_jsonにはシート名・元行・セル値・元URL、parsed_jsonには抽出ID・抽出経路・対応表・判定・候補IDを保存。
+対応表全行の監査情報とファイルハッシュはimport_batches.summary_jsonに保持。確定した対応はyahoo_initial_mappingsにも保存。
+既存DBの構造変更はありません。excludeは既存outcome制約と互換の `outcome=unchanged` とし、`parsed_json.decision=exclude`・理由・専用集計により明確に区別します。画面では「対象外」と表示し「変更なし」件数には含めません。
+hold/未確定行はimport_review_itemsに保存し、listingsには混ぜません。再取込時も保留履歴はバッチごとに残ります。
+
+### 実データ検証手順
+
+`scripts/validate-excel-imports.js` は本番DBをreadOnlyで読み込み、:memory:へ全テーブルを複製して処理します。本番ファイルと全行の前後一致、既存products・Mercari listingの全カラム一致、再取込で商品/出品が増えないことをassertします。
+
+```powershell
+node scripts/validate-excel-imports.js data/flea-v2.db ../flea-assistant/imports/260916_YahooURLList320.xlsx ../flea-assistant/imports/260916_YahooList320mercariID.xlsx ../flea-assistant/imports/260916_ラクマ出品中URL.xlsx --join-yahoo-title-price --legacy-zero-as-only
+```
+
+検証結果: Yahoo320件=matched233+Yahoo-only86+要確認1。Rakuma26件=完全一致25+要確認1。ハイパーリンク取得はそれぞれ320/26。
+Yahoo対応表の残り1行（ハローキティ平皿2枚セット）とYahoo一覧の残り1商品（マスク37枚）は別物のため保留。RakumaはSOLD OUTのニット商品の完全一致がなく保留。
+Rakumaファイル冒頭には53件という表示がありますが、実際の収録は26商品。全53件の検証ではありません。
+再取込はYahoo319件・Rakuma25件が変更なし、新規0、要確認は各1件。最終テストDBは634 products / 892 listings。本番は548 products / 548 Mercari listingsのまま。
+本番へのYahoo/Rakuma投入、起動中本番サーバーの再起動、コミット・pushは未実施。

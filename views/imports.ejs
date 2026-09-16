@@ -1,1 +1,15 @@
-<%- include('head') %><p class="eyebrow">IMPORT</p><h1>Mercari CSVを取り込む</h1><section class="panel"><p>初回は1出品を1商品として登録します。同名商品は統合しません。</p><p>再取込はサイト商品IDで照合し、編集済みのマスター原稿は保持します。</p><p class="muted">UTF-8 CSV・20MBまで。説明文・タグの列がない場合、新規商品の該当欄は空になります。CSVにない商品は終了扱いにしません。状態列がない従来形式では、購入日時あり＝売却済、なし＝公開状態不明として取り込みます。</p><form method="post" action="/imports/mercari" enctype="multipart/form-data"><input type="hidden" name="_csrf" value="<%= csrf %>"><label>CSVファイル<input type="file" name="csv" accept=".csv,text/csv" required></label><button>Mercari CSVを取り込む</button></form></section><h2>インポート履歴</h2><% if(!batches.length){ %><p class="empty">まだインポートしていません。</p><% } %><% batches.forEach(b=>{ %><p class="panel"><a href="/imports/<%= b.id %>">#<%= b.id %> <%= b.filename %></a> · <%= b.status==='failed'?'エラー':'処理完了' %> · <%= b.created_at %></p><% }) %><%- include('foot') %>
+<%- include('head') %><p class="eyebrow">IMPORT</p><h1>Mercari CSVを取り込む</h1><section class="panel"><p>初回は1出品を1商品として登録します。同名商品は統合しません。</p><p>再取込はサイト商品IDで照合し、編集済みのマスター原稿は保持します。</p><p class="muted">UTF-8 CSV・20MBまで。説明文・タグの列がない場合、新規商品の該当欄は空になります。CSVにない商品は終了扱いにしません。状態列がない従来形式では、購入日時あり＝売却済、なし＝公開状態不明として取り込みます。</p><form method="post" action="/imports/mercari" enctype="multipart/form-data"><input type="hidden" name="_csrf" value="<%= csrf %>"><label>CSVファイル<input type="file" name="csv" accept=".csv,text/csv" required></label><button>Mercari CSVを取り込む</button></form></section><h2>Yahoo / Rakuma Excel</h2>
+<p>商品名セルに埋め込まれたリンク先にも対応しています。公開状態が記載されていない場合は「不明」で登録します。</p>
+<% ['yahoo','rakuma'].forEach(site=>{ %><section class="panel"><h3><%= siteLabels[site] %></h3>
+<form method="post" action="/imports/excel/<%= site %>" enctype="multipart/form-data"><input type="hidden" name="_csrf" value="<%= csrf %>">
+<label>出品一覧Excel（.xlsx）<input type="file" name="listings" accept=".xlsx" required></label>
+<label>一覧のシート名（1シートなら省略可）<input name="sheetName"></label>
+<% if(site==='yahoo'){ %>
+<label>Yahoo対応表Excel（.xlsx）<input type="file" name="mapping" accept=".xlsx"></label>
+<label>対応表のシート名（1シートなら省略可）<input name="mappingSheet"></label>
+<p>対応表の判定は matched / yahoo_only / hold / exclude。未指定の商品は要確認になります。</p>
+<label class="check"><input type="checkbox" name="joinByTitlePrice" value="yes">Yahoo IDがない対応表は、Yahoo一覧との商品名・価格の完全一致が両方で一意の場合だけ照合する</label>
+<label class="check"><input type="checkbox" name="legacyZeroAsOnly" value="yes">旧対応表の「メルカリID=0・Only=0」は確認済みYahoo-onlyとして扱う</label>
+<% }else{ %><p>既知の出品IDを優先します。新しい出品はマスタータイトルの完全一致が1商品だけの場合に追加し、0件・複数件は要確認にします。</p><% } %>
+<button>この内容で取り込む</button></form></section><% }) %>
+<h2>インポート履歴</h2><% if(!batches.length){ %><p class="empty">まだインポートしていません。</p><% } %><% batches.forEach(b=>{ %><p class="panel"><a href="/imports/<%= b.id %>">#<%= b.id %> <%= b.filename %></a> · <%= b.status==='failed'?'エラー':'処理完了' %> · <%= b.created_at %></p><% }) %><%- include('foot') %>
