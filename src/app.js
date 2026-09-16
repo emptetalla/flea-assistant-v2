@@ -1,6 +1,7 @@
 const express=require('express');const multer=require('multer');const crypto=require('node:crypto');const path=require('node:path');
 const {fmId}=require('./db');const {importMercari}=require('./importer');
 const {importExcel}=require('./excelImporter');
+const {sites,stateLabels,listingState,stateColumns}=require('./listingState');
 function createApp(db){
  const app=express();const csrf=crypto.randomBytes(32).toString('hex');
  app.disable('x-powered-by');app.set('view engine','ejs');app.set('views',path.join(__dirname,'../views'));
@@ -13,8 +14,8 @@ function createApp(db){
  const upload=multer({storage:multer.memoryStorage(),limits:{fileSize:20*1024*1024,files:1,fields:5}});
  const guard=(req,res,next)=>req.body._csrf===csrf?next():res.status(403).send('画面を再読み込みして再送信してください');
  app.use((req,res,next)=>{
-  res.locals.fmId=fmId;res.locals.csrf=csrf;
-  res.locals.labels={unorganized:'未整理',ready:'整理済',active:'現役',sold:'売却済',withdrawn:'取扱終了',paused:'公開停止',ended:'終了',unknown:'不明'};
+  res.locals.stateLabels=stateLabels;res.locals.listingState=listingState;res.locals.fmId=fmId;res.locals.csrf=csrf;
+  res.locals.labels={unorganized:'未整理',ready:'整理済',active:'販売対象',sold:'売却済',withdrawn:'取扱終了',paused:'公開停止',ended:'終了',unknown:'状態未確認'};
   res.locals.siteLabels={mercari:'Mercari',yahoo:'Yahoo!フリマ',rakuma:'Rakuma'};
   res.locals.categories=db.prepare('SELECT * FROM management_categories WHERE is_active=1 ORDER BY sort_order').all();next();
  });
@@ -22,13 +23,15 @@ function createApp(db){
  app.get('/',(req,res)=>res.redirect('/products'));
  app.get('/products',(req,res)=>{
   const where=[],params=[];
-  const f={q:String(req.query.q||''),organization:String(req.query.organization||''),lifecycle:String(req.query.lifecycle||''),category:String(req.query.category||''),missing:String(req.query.missing||'')};
+  const f={q:String(req.query.q||''),organization:String(req.query.organization||''),lifecycle:String(req.query.lifecycle||''),category:String(req.query.category||''),...Object.fromEntries(sites.map(site=>[site,String(req.query[site]||'')]))};
   if(f.q){where.push("(p.master_title LIKE ? OR ('FM'||printf('%05d',p.id))=?)");params.push('%'+f.q+'%',f.q.toUpperCase());}
   if(['unorganized','ready'].includes(f.organization)){where.push('p.organization_status=?');params.push(f.organization);}
   if(['active','sold','withdrawn'].includes(f.lifecycle)){where.push('p.lifecycle_status=?');params.push(f.lifecycle);}
   if(/^\d+$/.test(f.category)){where.push('p.category_id=?');params.push(Number(f.category));}
-  if(['mercari','yahoo','rakuma'].includes(f.missing)){where.push("NOT EXISTS(SELECT 1 FROM listings l WHERE l.product_id=p.id AND l.site=? AND l.status='active')");params.push(f.missing);}
-  const products=db.prepare(`SELECT p.*,c.name category_name FROM products p LEFT JOIN management_categories c ON c.id=p.category_id ${where.length?'WHERE '+where.join(' AND '):''} ORDER BY p.id DESC`).all(...params);
+  // Legacy missing links now mean no listing at all, including unknown listings.
+  if(sites.includes(req.query.missing)&&!f[req.query.missing])f[req.query.missing]='missing';
+  for(const site of sites){if(Object.hasOwn(stateLabels,f[site])){where.push(site+'_state=?');params.push(f[site]);}else f[site]='';}
+  const products=db.prepare(`SELECT * FROM (SELECT p.*,c.name category_name,${stateColumns} FROM products p LEFT JOIN management_categories c ON c.id=p.category_id) p ${where.length?'WHERE '+where.join(' AND '):''} ORDER BY p.id DESC`).all(...params);
   res.render('products',{products,f});
  });
  app.get('/products/new',(req,res)=>res.render('form',{p:{master_title:'',master_description:'',hashtags_text:'',organization_status:'unorganized',lifecycle_status:'active',category_id:null},error:null}));
