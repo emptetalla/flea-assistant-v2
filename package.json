@@ -1,0 +1,1 @@
+{"name":"flea-assistant-v2","version":"0.1.0","private":true,"engines":{"node":">=24"},"scripts":{"start":"node src/server.js","test":"node --test","lint":"node scripts/check.js","build":"node scripts/check.js"},"dependencies":{"express":"^4.21.2","ejs":"^3.1.10","multer":"^2.0.2","csv-parse":"^7.0.0"}}

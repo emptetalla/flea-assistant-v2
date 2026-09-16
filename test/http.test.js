@@ -1,0 +1,23 @@
+const test=require('node:test');const assert=require('node:assert/strict');
+const {openDb}=require('../src/db');const {createApp}=require('../src/app');
+test('HTTP登録・編集・検索・詳細・CSV送信・再取込・要確認・CSRF',async t=>{
+ const db=openDb(':memory:');const server=createApp(db).listen(0,'127.0.0.1');
+ await new Promise(resolve=>server.once('listening',resolve));
+ t.after(async()=>{await new Promise(resolve=>server.close(resolve));db.close();});
+ const base='http://127.0.0.1:'+server.address().port;
+ let res=await fetch(base+'/products/new');assert.equal(res.status,200);const html=await res.text();const token=html.match(/name="_csrf" value="([^"]+)"/)[1];
+ const post=async(url,data)=>fetch(base+url,{method:'POST',redirect:'manual',body:new URLSearchParams({_csrf:token,...data})});
+ assert.equal((await post('/products',{master_title:'  '})).status,400);
+ res=await post('/products',{master_title:'<商品>'});assert.equal(res.status,303);assert.equal(res.headers.get('location'),'/products/1');
+ res=await fetch(base+'/products/1');let detail=await res.text();assert.match(detail,/&lt;商品&gt;/);assert.match(detail,/未整理/);assert.match(detail,/Rakuma/);
+ assert.equal((await post('/products/1',{master_title:'編集済',master_description:'説明',hashtags_text:'#タグ',category_id:'1',organization_status:'ready',lifecycle_status:'withdrawn'})).status,303);
+ assert.equal(db.prepare('SELECT organization_status FROM products WHERE id=1').get().organization_status,'ready');
+ for(const url of ['/products?category=1&organization=ready&missing=yahoo','/products/1/edit','/imports','/reviews','/health'])assert.equal((await fetch(base+url)).status,200);
+ const upload=async text=>{const body=new FormData();body.append('_csrf',token);body.append('csv',new Blob([text],{type:'text/csv'}),'sample.csv');return fetch(base+'/imports/mercari',{method:'POST',body,redirect:'manual'});};
+ res=await upload('商品ID,商品名,status\nm55,取込,active\nm66,不明,???');assert.equal(res.status,303);
+ detail=await(await fetch(base+res.headers.get('location'))).text();assert.match(detail,/新規product/);assert.match(detail,/要確認/);
+ assert.equal(db.prepare('SELECT count(*) n FROM products').get().n,2);
+ res=await upload('商品ID,商品名,status\nm55,取込,active');assert.equal(res.status,303);assert.equal(db.prepare('SELECT count(*) n FROM products').get().n,2);
+ assert.equal((await fetch(base+'/products',{method:'POST',body:new URLSearchParams({master_title:'不正'})})).status,403);
+ assert.equal((await fetch(base+'/products/999')).status,404);
+});
