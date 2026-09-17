@@ -13,7 +13,7 @@ const aliases={
 const states=new Map([
  ['出品中','active'],['公開中','active'],['販売中','active'],['active','active'],['on_sale','active'],
  ['公開停止','paused'],['公開停止中','paused'],['出品停止中','paused'],['paused','paused'],['stop','paused'],
- ['売却','sold'],['売却済','sold'],['売却済み','sold'],['売り切れ','sold'],['sold','sold'],['sold_out','sold'],
+ ['売却','sold'],['売却済','sold'],['売却済み','sold'],['売り切れ','sold'],['sold','sold'],['sold_out','sold'],['SOLD OUT','sold'],['sold out','sold'],
  ['終了','ended'],['削除済み','ended'],['ended','ended']
 ]);
 function parseMercari(buffer){
@@ -36,14 +36,14 @@ function parseMercari(buffer){
   if(!/^m\d+$/.test(id))return fail('item_id','Mercari商品IDが欠落または形式不明です（m + 数字が必要）');
   if(!title)return fail('title','商品名が空です');
   const source=get('status').trim();let status=states.get(source);
-  // 購入日時が空欄でも公開中とは限らない。公開状態はunknownとして保持する。
-  if(!status&&!source)status=get('purchased').trim()?'sold':'unknown';
+  // 最新掲載リストの正常な通常商品は出品中。売却・停止などの明示状態は優先する。
+  if(!status&&!source)status=get('purchased').trim()?'sold':'active';
   if(!status)return fail('status','出品状態を判定できません。status列または購入日時列を確認してください');
   if(get('purchased').trim()&&status!=='sold')return fail('status_conflict','購入日時と出品状態が矛盾しています');
   const priceText=get('price').trim().replace(/[¥￥,]/g,'');const price=priceText===''?null:Number(priceText);
   if(price!==null&&(!Number.isSafeInteger(price)||price<0))return fail('price','価格が不正です');
   r.data={site_item_id:id,site_title:title,site_description:get('description'),site_hashtags_text:get('hashtags'),price,status,
-   source_status:source||(status==='sold'?'購入日時あり':'公開状態不明'),listed_at:get('listed').trim()||null,ended_at:get('ended').trim()||get('purchased').trim()||null};
+   source_status:source||(status==='sold'?'購入日時あり':'最新掲載リスト'),listed_at:get('listed').trim()||null,ended_at:get('ended').trim()||get('purchased').trim()||null};
   r.present={description:columns.description>=0,hashtags:columns.hashtags>=0,price:columns.price>=0,listed:columns.listed>=0,ended:columns.ended>=0||columns.purchased>=0};
   return r;
  });

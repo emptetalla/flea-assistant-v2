@@ -56,17 +56,19 @@ function money(value) {
   if (!/^\d+$/.test(str) || !Number.isSafeInteger(Number(str))) return NaN;
   return Number(str);
 }
-const statuses = new Map([['出品中','active'],['公開中','active'],['active','active'],['公開停止中','paused'],['公開停止','paused'],['paused','paused'],['売却済','sold'],['売却済み','sold'],['売却','sold'],['sold','sold'],['sold_out','sold'],['SOLD OUT','sold'],['終了','ended'],['ended','ended'],['unknown','unknown'],['不明','unknown']]);
+const statuses = new Map([['出品中','active'],['公開中','active'],['active','active'],['公開停止中','paused'],['公開停止','paused'],['paused','paused'],['売却済','sold'],['売却済み','sold'],['売却','sold'],['sold','sold'],['sold_out','sold'],['SOLD OUT','sold'],['sold out','sold'],['売り切れ','sold'],['終了','ended'],['ended','ended'],['unknown','unknown'],['不明','unknown']]);
 function record(site, sheet, sourceRows, fields, explicitId = '', identityUrls) {
   const raw = { sheet: sheet.name, rows: sourceRows.map(snapshot) };
   const urls = identityUrls || sourceRows.flatMap(rowUrls);
   const extraction = extractItemId(site, explicitId, urls);
   const sourceStatus = fields.status || '';
-  // 更新日時やファイル名からactiveを推定しない。
-  const status = statuses.get(sourceStatus) || 'unknown';
+  // 最新掲載一覧の通常行はactive。未知の明示状態はunknownのまま保持。
+  const normalListing = !sourceStatus || (site==='yahoo' && /^(?:\d+(?:秒|分|時間|日|週間|週|ヶ月|か月|月|年)前|半年以上前)に(?:出品|更新)$/.test(sourceStatus));
+  let status = statuses.get(sourceStatus) || (normalListing ? 'active' : 'unknown');
   const title = String(fields.title || '').trim();
   const price = money(fields.price);
   const reason = extraction.reason || (!title || /^https?:\/\//.test(title) ? '商品タイトルがありません' : null) || (Number.isNaN(price) ? '価格が不正です' : null);
+  if(reason)status='unknown';
   return { rowNumber: sourceRows[0].number, raw, extraction, reason,
     data: { site_item_id: extraction.id, site_title: title, price: Number.isNaN(price) ? null : price,
       status, source_status: sourceStatus, site_description: fields.description || '', site_hashtags_text: fields.hashtags || '' },

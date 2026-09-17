@@ -85,3 +85,5 @@ test('タイトル+リンク列だけの表にも対応、不正な対応表ID�
  const result=await parseYahooMapping(bad,source,{joinByTitlePrice:true});assert.equal(result.byId.size,0);assert.ok(result.records[0].reason);
 });
 
+
+test('latest normal listings active, explicit sold/paused retained, anomalous status unknown',async()=>{for(const site of ['yahoo','rakuma']){const ids=site==='yahoo'?['z901','z902','z903','z904']:[rid(901),rid(902),rid(903),rid(904)];const rows=await parseExcelListings(await workbook([['商品ID','商品名','status'],[ids[0],'通常',''],[ids[1],'売却','SOLD OUT'],[ids[2],'停止','paused'],[ids[3],'異常','???']]),site);assert.deepEqual(rows.map(r=>r.data.status),['active','sold','paused','unknown']);}});

@@ -55,7 +55,7 @@ test('ファイル解析エラーを記録・取引日時とstatus矛盾を保�
 test('従来CSV購入日時判定・BOM・カンマ・改行を保持',t=>{
  fresh(t);
  const input=Buffer.concat([Buffer.from([239,187,191]),csv([['m1','商品,1','説明\n改行','',990],['m2','商品2','','2026-09-16',500]],['商品ID','商品名','商品説明','購入日時','商品代金'])]);
- const rows=parseMercari(input);assert.equal(rows[0].data.status,'unknown');assert.equal(rows[1].data.status,'sold');assert.equal(rows[0].data.site_title,'商品,1');assert.equal(rows[0].data.site_description,'説明\n改行');assert.equal(rows[0].data.price,990);
+ const rows=parseMercari(input);assert.equal(rows[0].data.status,'active');assert.equal(rows[1].data.status,'sold');assert.equal(rows[0].data.site_title,'商品,1');assert.equal(rows[0].data.site_description,'説明\n改行');assert.equal(rows[0].data.price,990);
 });
 test('同一商品・同一サイトの複数履歴を許可しサイトID重複は拒否',t=>{
  const db=fresh(t);db.prepare("INSERT INTO products(master_title) VALUES('商品')").run();
@@ -69,12 +69,12 @@ test('途中DBエラーで商品・出品・取込履歴全てロールバック
  for(const table of ['products','listings','import_rows','import_batches'])assert.equal(db.prepare('SELECT count(*) n FROM '+table).get().n,0);
 });
 
-test('公開状態不明はunknown・商品は現役・再取込で原稿と商品状態を保持',t=>{
+test('正常な最新掲載商品はactive・商品は現役・再取込で原稿と商品状態を保持',t=>{
  const db=fresh(t);
  const input=csv([['m1','未確認',''],['m2','売却済','2026-09-16']],['商品ID','商品名','購入日時']);
  assert.equal(summary(db,importMercari(db,input,'unknown.csv')).newListings,2);
- assert.equal(db.prepare('SELECT status FROM listings WHERE id=1').get().status,'unknown');
- assert.equal(db.prepare('SELECT source_status FROM listings WHERE id=1').get().source_status,'公開状態不明');
+ assert.equal(db.prepare('SELECT status FROM listings WHERE id=1').get().status,'active');
+ assert.equal(db.prepare('SELECT source_status FROM listings WHERE id=1').get().source_status,'最新掲載リスト');
  assert.equal(db.prepare('SELECT lifecycle_status FROM products WHERE id=1').get().lifecycle_status,'active');
  assert.equal(db.prepare('SELECT status FROM listings WHERE id=2').get().status,'sold');
  assert.equal(db.prepare('SELECT lifecycle_status FROM products WHERE id=2').get().lifecycle_status,'sold');
@@ -83,10 +83,10 @@ test('公開状態不明はunknown・商品は現役・再取込で原稿と商�
  const result=summary(db,importMercari(db,input,'unknown.csv'));
  assert.equal(result.newProducts,0);assert.equal(result.unchanged,2);
  assert.deepEqual(db.prepare('SELECT * FROM products WHERE id=1').get(),before);
- assert.equal(db.prepare('SELECT status FROM listings WHERE id=1').get().status,'unknown');
+ assert.equal(db.prepare('SELECT status FROM listings WHERE id=1').get().status,'active');
 });
-test('公開状態・購入日時の列欠落もunknown、明示された出品状態は従来どおり',()=>{
- const missing=parseMercari(csv([['m1','商品']],['商品ID','商品名']));assert.equal(missing[0].data.status,'unknown');
+test('公開状態・購入日時の列欠落もactive、明示された出品状態は従来どおり',()=>{
+ const missing=parseMercari(csv([['m1','商品']],['商品ID','商品名']));assert.equal(missing[0].data.status,'active');
  const explicit=parseMercari(csv([['m1','公開','active'],['m2','停止','paused'],['m3','売却','sold'],['m4','終了','ended']],['商品ID','商品名','status']));
  assert.deepEqual(explicit.map(r=>r.data.status),['active','paused','sold','ended']);
 });

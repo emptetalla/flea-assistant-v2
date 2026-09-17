@@ -66,7 +66,7 @@ UTF-8（BOMあり可）、20MB上限。引用符付きカンマや改行に対�
 | 日時 | 出品日時 / 購入日時 / 終了日時、listed_at / purchased_at / ended_at |
 
 説明・タグ列がない場合は新規マスターを空欄で作成。説明文からタグを勝手に抽出しません。
-状態列がない旧形式は購入日時あり=sold、なし=unknownと判定し根拠をsource_statusに保存。公開中と公開停止をこの形式では判別できないため、activeとは推定しません。products.lifecycle_statusの現役(active)とは独立した扱いです。
+最新掲載リストの通常商品はactive、購入日時やSOLD OUTなど売却が明示された商品はsoldと判定します。公開停止・終了の明示状態は維持し、未知の状態はunknownまたは要確認として扱います。products.lifecycle_status（商品管理状態）とは独立しています。
 取込元日時は元表記のまま保持。アプリ管理日時はUTC。
 商品状態列（傷・汚れ等）は販売statusとは別なので使用しません。
 
